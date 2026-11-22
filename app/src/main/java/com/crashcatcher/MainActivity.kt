@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -34,11 +35,11 @@ class MainActivity : AppCompatActivity() {
         binding.btnToggle.setOnClickListener {
             if (MonitorService.isRunning) {
                 MonitorService.stop(this)
-                Toast.makeText(this, "已停止监控", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "已停止日志监控", Toast.LENGTH_SHORT).show()
             } else {
                 ensureNotifyPermission()
                 MonitorService.start(this)
-                Toast.makeText(this, "开始监控（若长时间无记录，请检查日志权限）", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "已尝试启动日志监控（需 ADB 授权）", Toast.LENGTH_SHORT).show()
             }
             binding.root.postDelayed({ refreshUi() }, 400)
         }
@@ -58,7 +59,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnExport.setOnClickListener { exportAll() }
-        binding.tvPermission.setOnClickListener { showPermissionHelp() }
+        binding.tvPermission.setOnClickListener { showModeDialog() }
 
         ensureNotifyPermission()
     }
@@ -68,23 +69,55 @@ class MainActivity : AppCompatActivity() {
         refreshUi()
     }
 
+    private fun isAccessibilityEnabled(): Boolean {
+        val enabled = Settings.Secure.getString(
+            contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+        return enabled.split(':').any { it.contains("com.crashcatcher") }
+    }
+
     private fun refreshUi() {
         val list = CrashStore.loadAll(this)
         adapter.submit(list)
         binding.tvEmpty.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
 
-        val granted = ContextCompat.checkSelfPermission(
+        val logGranted = ContextCompat.checkSelfPermission(
             this, "android.permission.READ_LOGS"
         ) == PackageManager.PERMISSION_GRANTED
+        val accEnabled = isAccessibilityEnabled()
 
-        binding.tvPermission.text = if (granted)
-            "日志权限：已授权 ✓（点击查看说明）"
-        else
-            "日志权限：未授权 ✗（点击查看如何授权）"
+        binding.tvPermission.text =
+            "无障碍检测：" + (if (accEnabled) "已开启 ✓" else "未开启（点这里开启）") +
+                "\n日志权限：" + (if (logGranted) "已授权 ✓" else "未授权（可选）")
 
-        binding.tvStatus.text = if (MonitorService.isRunning) "状态：正在监控" else "状态：未监控"
-        binding.btnToggle.text = if (MonitorService.isRunning) "停止监控" else "开始监控"
+        binding.tvStatus.text = when {
+            accEnabled && MonitorService.isRunning -> "状态：无障碍 + 日志 双模式"
+            accEnabled -> "状态：无障碍检测中"
+            MonitorService.isRunning -> "状态：日志监控中"
+            else -> "状态：未监控"
+        }
+        binding.btnToggle.text = if (MonitorService.isRunning) "停止日志监控" else "开始日志监控"
         binding.tvCount.text = "共 ${list.size} 条记录"
+    }
+
+    private fun showModeDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("选择检测方式")
+            .setMessage(
+                "【推荐】无障碍模式：不用电脑，去设置里打开开关即可，能记录哪个 App 崩溃 / 无响应。\n\n" +
+                    "日志模式：需要电脑用 ADB 授权，能记录完整堆栈，不方便可以忽略。"
+            )
+            .setPositiveButton("去开启无障碍") { _, _ ->
+                try {
+                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    Toast.makeText(this, "找到「崩溃捕手」并打开开关", Toast.LENGTH_LONG).show()
+                } catch (_: Exception) {
+                    Toast.makeText(this, "请手动进入：设置 → 辅助功能 → 无障碍", Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNeutralButton("查看日志模式") { _, _ -> showAdbHelp() }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     private fun ensureNotifyPermission() {
@@ -99,18 +132,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showPermissionHelp() {
+    private fun showAdbHelp() {
         val cmd = "adb shell pm grant $packageName android.permission.READ_LOGS"
         AlertDialog.Builder(this)
-            .setTitle("如何授权读取日志")
+            .setTitle("日志模式（需要电脑）")
             .setMessage(
-                "读取其它 App 的崩溃信息需要「读取日志 (READ_LOGS)」权限，系统不允许在应用内直接申请，需用电脑执行一次命令：\n\n" +
-                    "1. 手机开启「开发者选项」→「USB 调试」，用数据线连接电脑；\n" +
-                    "2. 电脑安装 adb；\n" +
-                    "3. 在电脑终端执行：\n\n" +
-                    cmd + "\n\n" +
-                    "授权成功后回到本页即可看到「已授权」。\n\n" +
-                    "提示：若无法使用电脑，请参考项目 README 中其它方案。"
+                "如果以后有电脑，可以执行下面命令开启日志模式，能记录完整堆栈：\n\n" + cmd +
+                    "\n\n没有电脑就用无障碍模式，足够日常使用。"
             )
             .setPositiveButton("知道了", null)
             .show()
