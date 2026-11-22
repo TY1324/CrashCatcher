@@ -17,11 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
-/**
- * 前台服务：持续读取 logcat 并把崩溃记录写入本地存储。
- */
 class MonitorService : Service() {
 
     private var job: Job? = null
@@ -103,13 +99,11 @@ class MonitorService : Service() {
             monitor.start(
                 onCrash = { record -> CrashStore.add(this@MonitorService, record) },
                 onError = { msg ->
-                    withContext(Dispatchers.Main) {
-                        getSystemService(NotificationManager::class.java)
-                            .notify(NOTIF_ID, buildNotification("监控异常：$msg"))
-                    }
+                    getSystemService(NotificationManager::class.java)
+                        .notify(NOTIF_ID, buildNotification("监控异常：$msg"))
                 }
             )
-            withContext(Dispatchers.Main) { stopSelf() }
+            stopSelf()
         }
     }
 
