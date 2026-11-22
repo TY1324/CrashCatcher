@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">崩溃捕手</string>
+    <string name="accessibility_label">崩溃捕手 · 崩溃检测</string>
+    <string name="accessibility_desc">用于检测其它应用崩溃或无响应时系统弹出的提示窗口，记录应用名称与时间。本服务不会读取你的输入内容，所有记录仅保存在本机。</string>
 </resources>
